@@ -1,0 +1,234 @@
+
+
+     var istakaStartY = 400;
+     var istakaStartX = 10;
+
+     var istakaHeight = 200;
+     var istakaWidth = 950;
+
+     var stoneGapX = 3;
+     var stoneGapY = 10;
+
+     var stoneHeight = istakaHeight / 2 - stoneGapY;
+     var stoneWidth = (istakaWidth / 14) - stoneGapX; 
+
+
+
+function DragEngine(stones, rack) {
+    var self = this;
+
+    self.stoneS = stones;
+    self.rack = rack;
+
+    self.dragStone = function (s, x, y, animate, racksnap) {
+	if (animate) {
+	    s.animate({x: x , y: y }, 100, "<>");
+	} else {
+	    s.attr({x: x, y: y});
+	}
+	
+	if (s.data('children')) {
+	    s.data('children').forEach(function (item) {
+		if (animate) {
+		    item.animate({x: x , y: y }, 100, "<>");
+		} else {
+		    item.attr({x: x, y: y});
+		}
+		item.toFront();
+	    });
+	}
+
+	s.toFront();
+    }
+
+
+    self.findOverlap = function(s, x, y) {
+	var overlappingStone;
+	self.stoneS.forEach(function(item) {
+	    if (item == s) return;
+	    var bbox = item.getBBox(true);
+	    if (x && (Raphael.isPointInsideBBox(bbox, x, y) || Raphael.isPointInsideBBox(bbox, x + stoneWidth + stoneGapX, y)
+		     || Raphael.isPointInsideBBox(bbox, x, y + stoneHeight) || Raphael.isPointInsideBBox(bbox, x + stoneWidth + stoneGapX, y + stoneHeight))) {
+		overlappingStone = item;
+	    }
+	});
+	return overlappingStone;
+    }
+    
+    self.canSlideStone = function(s, x, y) {
+	var bboxRack = self.rack.getBBox(true);
+	var bboxStone = s.getBBox(true);
+
+	if (Raphael.isPointInsideBBox(bboxRack, x + stoneWidth, y + stoneHeight)) {
+	    var overlappingStone = self.findOverlap(s);
+	
+	    if (overlappingStone) {
+		return self.canSlideStone(overlappingStone, x + stoneWidth + stoneGapX, y);
+	    } else {
+		return true;
+	    }
+	}
+	return false;
+    }
+
+    self.fixOverlapStone = function(s, x, y) {
+	var overlap = self.findOverlap(s, x, y);
+	if (overlap) {
+	    var bboxOverlap = overlap.getBBox(true);
+
+	    if (x + stoneWidth / 2 < bboxOverlap.x && self.canSlideStone(overlap,  x + stoneWidth + stoneGapX, y)) {
+		self.dragStone(overlap, self.rackSnapX(x + stoneWidth + stoneGapX), self.rackSnapY(y), true);
+		self.fixOverlapStone(overlap, x + stoneWidth + stoneGapX, y);
+	    } else {
+		// drag stone left
+
+		self.dragStone(s, self.rackSnapX(bboxOverlap.x - stoneWidth - stoneGapX - 1), self.rackSnapY(y), true);
+		self.fixOverlapStoneLeft(s, bboxOverlap.x - stoneWidth - stoneGapX - 1, self.rackSnapY(y));
+	    }
+
+	}else {
+	    // no overlap
+	}
+    }
+
+    self.fixOverlapStoneLeft = function(s, x, y) {
+	var overlap = self.findOverlap(s, x, y);
+	if (overlap) {
+	    var bboxOverlap = overlap.getBBox(true);
+	    if (Raphael.isPointInsideBBox(self.rack.getBBox(true), x, y)) {
+		self.dragStone(overlap, self.rackSnapX(x - stoneWidth - stoneGapX - 1), self.rackSnapY(y), true);
+		self.fixOverlapStoneLeft(overlap, x - stoneWidth - stoneGapX - 1, self.rackSnapY(y));
+	    }
+	}
+    }
+
+    
+    self.draggableStone = function(s, move, start, end) {
+	s.drag(function (x, y, event) {
+	    self.dragStone(this, this.ox + x, this.oy + y);
+	    if (move) move(this);
+	}, function() {
+	    self.movingStone = this;
+	    this.ox = this.attr('x');
+	    this.oy = this.attr('y');
+	    if (start) start(this);
+	}, function () {
+	    if (end) end(this);
+
+	    self.movingStone = null;
+	});
+    }
+
+    
+    self.rackSnapY = function(y) {
+	if ((y + stoneHeight / 2) > (istakaStartY + istakaHeight / 2 + stoneGapY))
+	    y = istakaStartY + (istakaHeight / 2) + stoneGapY;
+	else
+	    y = istakaStartY;
+	return y;
+    }
+
+    self.rackSnapX = function(x) {
+	if (x < istakaStartX)
+	    x = istakaStartX;
+	else if (x + stoneWidth + stoneGapX > istakaStartX + istakaWidth) {
+	    x = istakaStartX + istakaWidth - stoneWidth - stoneGapX;
+	}
+	return x;
+    }
+
+    self.snapToRackStone = function(s) {
+	var bboxRack = self.rack.getBBox(true);
+	var bboxStone = s.getBBox(true);
+
+	// fix y
+	var x = s.attr('x');
+	var y = s.attr('y');
+	x = self.rackSnapX(x);
+	y = self.rackSnapY(y);
+	self.dragStone(s, x, y, true);
+
+    }
+
+
+}
+
+
+function GameView(paper) {
+    var self = this;
+    self.paper = paper;
+
+    self.rack;
+    self.stoneS = [];
+
+    self.dragEngine;
+    self.movingStone = null;
+    
+    self.buildRack = function() {
+	var r = self.paper.rect(istakaStartX, istakaStartY, istakaWidth, istakaHeight);
+	return r;
+    }
+
+
+    
+    self.buildStone = function () {
+	var s = self.paper.image('http://placehold.it/200x200', 10, 10, stoneWidth, stoneHeight);
+
+	var background = self.paper.rect(10, 10, stoneWidth + 1, stoneHeight + 1);
+	background.attr({fill: "#000"});
+
+
+	var children = [];
+	children.push(background);
+	
+	s.data('children', children);
+
+	s.toFront();
+	return s;
+    }
+
+    self.buildMiddleStone = function() {
+	var s = self.buildStone();
+
+	self.dragEngine.dragStone(s, 100, 100);
+	self.dragEngine.draggableStone(s, function () {
+	    
+	}, function () {
+	    
+	}, function () {
+	    
+	});
+    }
+    
+    self.buildScene = function () {
+	var r = self.buildRack();
+	self.rack = r;
+
+	self.dragEngine = new DragEngine(self.stoneS, self.rack);
+	
+	for (var i = 0; i< 14; i++) {
+	    var s = self.buildStone();
+	    self.dragEngine.draggableStone(s, null, null, function (s) {
+		self.dragEngine.snapToRackStone(s);
+		self.dragEngine.fixOverlapStone(s, s.attr('x'), s.attr('y'));
+	    });
+
+	    self.dragEngine.dragStone(s, istakaStartX + ((stoneWidth + stoneGapX) * i), istakaStartY);
+	    self.dragEngine.fixOverlapStone(s, s.attr('x'), s.attr('y'));
+	    self.stoneS.push(s);
+	}
+
+	self.buildMiddleStone();
+	
+    }
+}
+
+$(document).ready(function() {
+
+    var paper = Raphael(10, 10, 1024, 768);
+
+    var gameview = new GameView(paper);
+
+    gameview.buildScene();
+    
+});
