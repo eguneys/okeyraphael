@@ -20,7 +20,7 @@ var io = socketio.listen(server, { log: false});
 
 
 var port = process.env.PORT || 3000;
-server.listen(3000, function () {
+server.listen(port, function () {
     console.log(' - listening on port ' + port + 'dirname ' + __dirname);
 });
 
